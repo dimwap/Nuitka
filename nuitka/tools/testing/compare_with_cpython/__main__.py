@@ -35,7 +35,9 @@ import time
 from nuitka.PythonVersions import python_version
 from nuitka.tools.testing.Common import (
     addToPythonPath,
+    executeAfterTimePassed,
     getTestingCPythonOutputsCacheDir,
+    killProcess,
     withPythonPathChange,
 )
 from nuitka.tools.testing.OutputComparison import compareOutput
@@ -94,6 +96,12 @@ def _getCPythonResults(cpython_cmd):
         with withPythonPathChange(os.getcwd()):
             process = subprocess.Popen(
                 args=cpython_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+
+        global send_kill
+        if send_kill:
+            executeAfterTimePassed(
+                1.0, lambda: killProcess("Uncompiled Python program", process.pid)
             )
 
         stdout_cpython, stderr_cpython = process.communicate()
@@ -174,6 +182,10 @@ def getCPythonResults(cpython_cmd, cpython_cached, force_update):
     return cpython_time, stdout_cpython, stderr_cpython, exit_cpython
 
 
+# Avoid passing it around for now.
+send_kill = None
+
+
 def main():
     # Of course many cases to deal with, pylint: disable=too-many-branches,too-many-locals,too-many-statements
 
@@ -222,6 +234,9 @@ def main():
     noverbose_log = hasArg("noverbose_log")
     noinclusion_log = hasArg("noinclusion_log")
 
+    global send_kill
+    send_kill = hasArg("--send-ctrl-c")
+
     plugins_enabled = []
     for count, arg in reversed(tuple(enumerate(args))):
         if arg.startswith("plugin_enable:"):
@@ -268,6 +283,10 @@ def main():
         python_debug = False
 
     comparison_mode = not coverage_mode
+
+    # We need to split it, so we know when to kill.
+    if send_kill:
+        two_step_execution = True
 
     assert not standalone_mode or not module_mode
     assert not recurse_all or not recurse_none
@@ -610,6 +629,12 @@ Stderr was:
                     process = subprocess.Popen(
                         args=nuitka_cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE
                     )
+
+                    if send_kill:
+                        executeAfterTimePassed(
+                            1.0,
+                            lambda: killProcess("Nuitka compiled program", process.pid),
+                        )
 
                     stdout_nuitka2, stderr_nuitka2 = process.communicate()
                     stdout_nuitka = stdout_nuitka1 + stdout_nuitka2
